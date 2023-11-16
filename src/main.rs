@@ -1,14 +1,9 @@
-use hueclient::{Bridge, HueError, IdentifiedScene};
+use crate::schedule::{extract_time_range, linearize_schedules, ScheduledScene};
 use chrono::prelude::*;
-use crate::utils::{DayTime, TimeRange};
+use hueclient::{Bridge, IdentifiedScene};
 
 mod config;
-mod utils;
-
-struct ScheduledScene {
-    scene_id: String,
-    time_range: TimeRange,
-}
+mod schedule;
 
 fn main() {
     let conf = config::load_config();
@@ -24,34 +19,36 @@ fn main() {
 }
 
 fn get_scheduled_scenes(scenes: &Vec<IdentifiedScene>) -> Vec<ScheduledScene> {
-    scenes
-        .iter()
-        .filter_map(|scene| {
-            Some(ScheduledScene {
-                scene_id: scene.id.clone(),
-                time_range: utils::extract_time_range(&scene.scene.name)?,
+    linearize_schedules(
+        scenes
+            .iter()
+            .filter_map(|scene| {
+                let (start, end) = extract_time_range(&scene.scene.name)?;
+                let scene_id = scene.id.as_str();
+                Some(ScheduledScene::new(scene_id, start, end))
             })
-        }).collect::<Vec<ScheduledScene>>()
+            .collect::<Vec<ScheduledScene>>(),
+    )
 }
 
-fn run(bridge: &Bridge) -> Result<(), HueError> {
+/// Process schedules and turns on lights if needed
+fn run(bridge: &Bridge) -> Result<(), &str> {
     //let lights = bridge.get_all_lights()?;
-    let scenes = bridge.get_all_scenes()?;
+    let scenes = bridge
+        .get_all_scenes()
+        .map_err(|_| "Failed to retrieve scenes")?;
     let scheduled_scenes = get_scheduled_scenes(&scenes);
-    let current_day_time = DayTime {
-        hour: Local::now().hour(),
-        minute: Local::now().minute(),
-    };
+    let current_day_time = Local::now().hour() * 60 + Local::now().minute();
 
     // TODO: Create store with information about reachable lights and if they should be turned on or off
 
     for scheduled_scene in scheduled_scenes {
-        let scene = scenes.iter()
+        let scene = scenes
+            .iter()
             .find(|scene| scene.id == scheduled_scene.scene_id)
-            .ok_or(Err(r"Scene missing"))?;
+            .ok_or("Scene missing")?;
 
-
-        if current_day_time.is_between(&scheduled_scene.time_range) {
+        if current_day_time > scheduled_scene.start && current_day_time < scheduled_scene.end {
             if let Some(err) = bridge.set_scene(scene.id.clone()).err() {
                 println!("Failed to set scene: {} for {}", err, scene.scene.name);
             } else {

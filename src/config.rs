@@ -6,7 +6,7 @@ use std::time::Duration;
 pub struct Config {
     pub bridge_ip: Ipv4Addr,
     pub bridge_username: String,
-    pub interval: Duration
+    pub interval: Duration,
 }
 
 pub fn load_config() -> Config {
@@ -21,12 +21,12 @@ pub fn load_config() -> Config {
         dotenv::var("INTERVAL")
             .expect("INTERVAL missing")
             .parse::<u64>()
-            .expect("failed to parse INTERVAL")
+            .expect("failed to parse INTERVAL"),
     );
 
     Config {
         bridge_ip,
         bridge_username,
-        interval
+        interval,
     }
 }
