@@ -1,5 +1,4 @@
 use regex::Regex;
-use std::num::ParseIntError;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct ScheduledScene {
@@ -18,18 +17,22 @@ impl ScheduledScene {
     }
 }
 
-pub fn extract_minutes(str: &String) -> Result<Option<u32>, ParseIntError> {
+pub fn extract_minutes(str: &String) -> Result<Option<u32>, ()> {
     let parts = str.split(":").collect::<Vec<&str>>();
 
     if parts.len() > 0 && parts.len() < 3 {
-        Ok(Some(
-            parts[0].parse::<u32>()?
-                + if parts.len() > 1 {
-                    parts[1].parse::<u32>()?
-                } else {
-                    0
-                },
-        ))
+        let minutes = if parts.len() > 1 {
+            parts[1].parse::<u32>().map_err(|_| ())?
+        } else {
+            0
+        };
+        let hours = parts[0].parse::<u32>().map_err(|_| ())?;
+
+        if minutes > 59 || hours > 24 {
+            Err(())
+        } else {
+            Ok(Some(hours * 60 + minutes))
+        }
     } else {
         Ok(None)
     }
@@ -122,6 +125,38 @@ pub fn linearize_schedules(list: Vec<ScheduledScene>) -> Vec<ScheduledScene> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_extract_time_range() {
+        // Valid formats
+        assert_eq!(
+            extract_time_range(&"Test (10h-20h)".to_string()),
+            Some((10 * 60, 20 * 60))
+        );
+        assert_eq!(
+            extract_time_range(&"Test (12:23h-20h)".to_string()),
+            Some((12 * 60 + 23, 20 * 60))
+        );
+        assert_eq!(
+            extract_time_range(&"Test (12:23h-20:59h)".to_string()),
+            Some((12 * 60 + 23, 20 * 60 + 59))
+        );
+        assert_eq!(
+            extract_time_range(&"Test (0:01h-0:00h)".to_string()),
+            Some((1, 0))
+        );
+        assert_eq!(
+            extract_time_range(&"Test (0:00h-0:00h)".to_string()),
+            Some((0, 0))
+        );
+
+        // Invalid formats
+        assert_eq!(extract_time_range(&"Test (0:1h-0:0h)".to_string()), None);
+        assert_eq!(extract_time_range(&"Test (10h-20:60h)".to_string()), None);
+        assert_eq!(extract_time_range(&"Test (10h-25h)".to_string()), None);
+        assert_eq!(extract_time_range(&"Test (10h-20h".to_string()), None);
+        assert_eq!(extract_time_range(&"Test 10h-20h)".to_string()), None);
+    }
 
     #[test]
     fn test_linearize_schedules_no_change() {
