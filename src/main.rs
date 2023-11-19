@@ -1,61 +1,79 @@
-use crate::schedule::{extract_time_range, linearize_schedules, ScheduledScene};
-use chrono::prelude::*;
-use hueclient::{Bridge, IdentifiedScene};
+use crate::utils::get_scheduled_scenes;
+use huelib2::resource::group::StateModifier;
+use huelib2::Bridge;
+use std::collections::HashMap;
 
 mod config;
-mod schedule;
+mod utils;
 
 fn main() {
-    let conf = config::load_config();
-    let bridge = Bridge::for_ip(conf.bridge_ip).with_user(conf.bridge_username);
+    let configuration = config::load_config();
+    let bridge = Bridge::new(configuration.bridge_ip, configuration.bridge_username);
+
+    let mut reachable = HashMap::<String, bool>::new();
 
     loop {
-        std::thread::sleep(conf.interval);
+        std::thread::sleep(configuration.interval);
 
-        if let Some(err) = run(&bridge).err() {
-            println!("Failed to run: {}", err);
-        }
-    }
-}
+        let Ok(all_lights) = bridge.get_all_lights() else {
+            eprintln!("Failed to retrieve lights");
+            continue;
+        };
 
-fn get_scheduled_scenes(scenes: &Vec<IdentifiedScene>) -> Vec<ScheduledScene> {
-    linearize_schedules(
-        scenes
-            .iter()
-            .filter_map(|scene| {
-                let (start, end) = extract_time_range(&scene.scene.name)?;
-                let scene_id = scene.id.as_str();
-                Some(ScheduledScene::new(scene_id, start, end))
-            })
-            .collect::<Vec<ScheduledScene>>(),
-    )
-}
+        let Ok(all_scenes) = bridge
+            .get_all_scenes()
+            .map_err(|_| "Failed to retrieve scenes")
+        else {
+            eprintln!("Failed to retrieve scenes");
+            continue;
+        };
 
-/// Process schedules and turns on lights if needed
-fn run(bridge: &Bridge) -> Result<(), &str> {
-    //let lights = bridge.get_all_lights()?;
-    let scenes = bridge
-        .get_all_scenes()
-        .map_err(|_| "Failed to retrieve scenes")?;
-    let scheduled_scenes = get_scheduled_scenes(&scenes);
-    let current_day_time = Local::now().hour() * 60 + Local::now().minute();
+        for scheduled_scene in get_scheduled_scenes(&all_scenes).iter() {
+            let Some(scene) = all_scenes
+                .iter()
+                .find(|scene| scene.id == scheduled_scene.scene_id)
+            else {
+                eprintln!("Scene not found: {}", scheduled_scene.scene_id);
+                continue;
+            };
 
-    // TODO: Create store with information about reachable lights and if they should be turned on or off
+            let Some(group_id) = &scene.group else {
+                eprintln!("Scene has no group: {}", scene.name);
+                continue;
+            };
 
-    for scheduled_scene in scheduled_scenes {
-        let scene = scenes
-            .iter()
-            .find(|scene| scene.id == scheduled_scene.scene_id)
-            .ok_or("Scene missing")?;
+            let Some(lights) = &scene.lights else {
+                eprintln!("Scene has no lights: {}", scene.name);
+                continue;
+            };
 
-        if current_day_time > scheduled_scene.start && current_day_time < scheduled_scene.end {
-            if let Some(err) = bridge.set_scene(scene.id.clone()).err() {
-                println!("Failed to set scene: {} for {}", err, scene.scene.name);
-            } else {
-                println!("Set scene: {}", scene.scene.name);
+            let turn_on = lights.iter().all(|light_id| {
+                let Some(light) = all_lights.iter().find(|light| light.id.eq(light_id)) else {
+                    eprintln!("Light not found: {}", light_id);
+                    return false;
+                };
+
+                let Some(last_reachable) = reachable.get(light_id) else {
+                    return false;
+                };
+
+                return !*last_reachable && light.state.reachable;
+            });
+
+            if turn_on {
+                let modifier = StateModifier::new().with_scene(scene.id.clone());
+
+                if let Err(err) = bridge.set_group_state(group_id.clone(), &modifier) {
+                    println!("Failed to set scene: {} for {}", err, scene.name);
+                } else {
+                    println!("Set scene: {}", scene.name);
+                }
             }
         }
-    }
 
-    Ok(())
+        // Update light states
+        for light in all_lights.iter() {
+            reachable.insert(light.id.clone(), light.state.reachable);
+        }
+    }
 }

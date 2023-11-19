@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 chrono = "0.4.31"
 dotenv = "0.15.0"
-hueclient = "0.4.3"
+huelib2 = "0.13.3"
 regex = "1.10.2"
