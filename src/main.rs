@@ -8,15 +8,12 @@ mod config;
 mod utils;
 
 fn main() {
+    let mut reachable = HashMap::<String, bool>::new();
     let configuration = config::load_config();
     let bridge = Bridge::new(configuration.bridge_ip, configuration.bridge_username);
 
-    let mut reachable = HashMap::<String, bool>::new();
-
     loop {
-        if !reachable.is_empty() {
-            std::thread::sleep(configuration.interval);
-        }
+        std::thread::sleep(configuration.interval);
 
         let Ok(all_lights) = bridge.get_all_lights() else {
             eprintln!("Failed to retrieve lights");

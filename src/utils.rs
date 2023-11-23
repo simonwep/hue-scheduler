@@ -44,6 +44,15 @@ pub fn extract_time_range(str: &String) -> Option<(u32, u32)> {
     ))
 }
 
+/// Checks if a value is in a time-range
+pub fn matches_time_range(range: &(u32, u32), value: u32) -> bool {
+    if range.0 < range.1 {
+        value >= range.0 && value <= range.1
+    } else {
+        value >= range.0 || value <= range.1
+    }
+}
+
 /// Returns all scheduled scenes that are active right now
 pub fn get_scheduled_scenes(scenes: &Vec<Scene>) -> Vec<ScheduledScene> {
     let mut scheduled_scenes = HashMap::<u64, ScheduledScene>::new();
@@ -56,7 +65,7 @@ pub fn get_scheduled_scenes(scenes: &Vec<Scene>) -> Vec<ScheduledScene> {
         };
 
         // Out of range
-        if now < time_range.0 || now > time_range.1 {
+        if !matches_time_range(&time_range, now) {
             continue;
         }
 
@@ -101,7 +110,6 @@ mod tests {
 
     #[test]
     fn test_extract_time_range() {
-        // Valid formats
         assert_eq!(
             extract_time_range(&"Test (10h-20h)".to_string()),
             Some((10 * 60, 20 * 60))
@@ -123,11 +131,21 @@ mod tests {
             Some((0, 0))
         );
 
-        // Invalid formats
         assert_eq!(extract_time_range(&"Test (0:1h-0:0h)".to_string()), None);
         assert_eq!(extract_time_range(&"Test (10h-20:60h)".to_string()), None);
         assert_eq!(extract_time_range(&"Test (10h-25h)".to_string()), None);
         assert_eq!(extract_time_range(&"Test (10h-20h".to_string()), None);
         assert_eq!(extract_time_range(&"Test 10h-20h)".to_string()), None);
+    }
+
+    #[test]
+    fn test_matches_time_range() {
+        assert!(matches_time_range(&(10 * 60, 20 * 60), 12 * 60));
+        assert!(matches_time_range(&(10 * 60, 20 * 60), 10 * 60));
+        assert!(matches_time_range(&(12 * 60, 6 * 60), 20 * 60));
+        assert!(!matches_time_range(&(12 * 60, 6 * 60), 8 * 60));
+        assert!(matches_time_range(&(20 * 60, 12 * 60), 21 * 60));
+        assert!(matches_time_range(&(20 * 60, 12 * 60), 10 * 60));
+        assert!(!matches_time_range(&(20 * 60, 12 * 60), 13 * 60));
     }
 }
