@@ -91,8 +91,16 @@ fn main() {
             continue;
         };
 
+        let (sunrise, sunset) = get_sunrise_sunset();
+        let mut parser = TimeRangeParser::new();
+
+        parser.define_variables(HashMap::from([
+            ("sunrise".to_string(), sunrise),
+            ("sunset".to_string(), sunset),
+        ]));
+
         // Process scenes
-        for scheduled_scene in get_scheduled_scenes(&changed_scenes).iter() {
+        for scheduled_scene in get_scheduled_scenes(&parser, &changed_scenes).iter() {
             if let Err(err) = bridge.set_group_state(
                 &scheduled_scene.scene_id,
                 &StateModifier::new().with_scene(scheduled_scene.scene_id.clone()),
@@ -105,9 +113,8 @@ fn main() {
 }
 
 /// Returns all scheduled scenes that are active right now
-pub fn get_scheduled_scenes(scenes: &Vec<Scene>) -> Vec<ScheduledScene> {
+fn get_scheduled_scenes(parser: &TimeRangeParser, scenes: &Vec<Scene>) -> Vec<ScheduledScene> {
     let mut scheduled_scenes = HashMap::<u64, ScheduledScene>::new();
-    let parser = TimeRangeParser::new();
     let now = Local::now().hour() * 60 + Local::now().minute();
 
     // Group scenes by their lights
@@ -154,4 +161,15 @@ pub fn get_scheduled_scenes(scenes: &Vec<Scene>) -> Vec<ScheduledScene> {
         .values()
         .cloned()
         .collect::<Vec<ScheduledScene>>()
+}
+
+fn get_sunrise_sunset() -> (u32, u32) {
+    let now = Local::now();
+    let (sunrise, sunset) =
+        sunrise::sunrise_sunset(43.6532, 79.3832, now.year(), now.month(), now.day());
+    (daytime_to_minutes(sunrise), daytime_to_minutes(sunset))
+}
+
+fn daytime_to_minutes(millis: i64) -> u32 {
+    (((millis / 1_000 / 60 / 60) % 24) * 60) as u32 + ((millis / 1_000 / 60) % 60) as u32
 }
