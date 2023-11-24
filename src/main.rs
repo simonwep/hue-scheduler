@@ -1,11 +1,21 @@
-use crate::utils::get_scheduled_scenes;
+use crate::time_range_parser::TimeRangeParser;
+use chrono::{Datelike, Local, Timelike};
 use huelib2::resource::group::StateModifier;
 use huelib2::resource::{Light, Scene};
 use huelib2::Bridge;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 mod config;
-mod utils;
+mod time_range_parser;
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct ScheduledScene {
+    pub scene_id: String,
+    pub start: u32,
+    pub end: u32,
+}
 
 fn main() {
     let mut reachable = HashMap::<String, bool>::new();
@@ -92,4 +102,56 @@ fn main() {
             }
         }
     }
+}
+
+/// Returns all scheduled scenes that are active right now
+pub fn get_scheduled_scenes(scenes: &Vec<Scene>) -> Vec<ScheduledScene> {
+    let mut scheduled_scenes = HashMap::<u64, ScheduledScene>::new();
+    let parser = TimeRangeParser::new();
+    let now = Local::now().hour() * 60 + Local::now().minute();
+
+    // Group scenes by their lights
+    for scene in scenes {
+        let Some(time_range) = parser.extract_time_range(&scene.name) else {
+            continue;
+        };
+
+        // Out of range
+        if !parser.matches_time_range(&time_range, now) {
+            continue;
+        }
+
+        let Some(lights) = &scene.lights else {
+            continue;
+        };
+
+        let mut sorted_lights = lights.clone();
+        sorted_lights.sort();
+
+        let mut hash = DefaultHasher::new();
+        sorted_lights.hash(&mut hash);
+
+        let scene_id = hash.finish();
+
+        // Check if scene is closer to now than this one
+        if let Some(last_scene) = scheduled_scenes.get(&scene_id) {
+            if last_scene.start > time_range.0 {
+                continue;
+            }
+        }
+
+        scheduled_scenes.insert(
+            scene_id,
+            ScheduledScene {
+                scene_id: scene.id.clone(),
+                start: time_range.0,
+                end: time_range.1,
+            },
+        );
+    }
+
+    scheduled_scenes
+        .values()
+        .cloned()
+        .collect::<Vec<ScheduledScene>>()
 }

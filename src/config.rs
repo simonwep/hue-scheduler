@@ -8,6 +8,8 @@ pub struct Config {
     pub bridge_ip: IpAddr,
     pub bridge_username: String,
     pub interval: Duration,
+    pub home_latitude: f64,
+    pub home_longitude: f64,
 }
 
 pub fn load_config() -> Config {
@@ -26,9 +28,21 @@ pub fn load_config() -> Config {
             .expect("failed to parse INTERVAL"),
     );
 
+    let home_latitude = env::var("HOME_LATITUDE")
+        .expect("HOME_LATITUDE missing")
+        .parse::<f64>()
+        .expect("failed to parse HOME_LATITUDE");
+
+    let home_longitude = env::var("HOME_LONGITUDE")
+        .expect("HOME_LONGITUDE missing")
+        .parse::<f64>()
+        .expect("failed to parse HOME_LONGITUDE");
+
     Config {
         bridge_ip,
         bridge_username,
         interval,
+        home_latitude,
+        home_longitude,
     }
 }
