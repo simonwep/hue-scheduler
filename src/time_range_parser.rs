@@ -7,6 +7,16 @@ pub struct TimeRangeParser {
     variables: HashMap<String, u32>,
 }
 
+/// Utility function to convert hours to minutes
+/// # Examples
+///
+/// ```
+/// assert_eq!(h(10), 600);
+/// ```
+fn h(hours: u32) -> u32 {
+    hours * 60
+}
+
 impl TimeRangeParser {
     pub fn new() -> TimeRangeParser {
         TimeRangeParser {
@@ -23,8 +33,8 @@ impl TimeRangeParser {
     ///
     /// parser.define_variables(
     ///   vec![
-    ///     ("sunrise", 6 * 60),
-    ///     ("sunset", 20 * 60),
+    ///     ("sunrise", h(6)),
+    ///     ("sunset", h(20)),
     ///   ].into_iter().collect::<HashMap<String, u32>>();
     /// )
     /// ```
@@ -37,16 +47,16 @@ impl TimeRangeParser {
     /// ```
     /// let parser = TimeRangeParser::new();
     ///
-    /// assert!(parser.matches_time_range(&(10 * 60, 20 * 60), 12 * 60));
-    /// assert!(parser.matches_time_range(&(10 * 60, 20 * 60), 10 * 60));
-    /// assert!(parser.matches_time_range(&(12 * 60, 6 * 60), 20 * 60));
-    /// assert!(!parser.matches_time_range(&(12 * 60, 6 * 60), 8 * 60));
+    /// assert!(parser.matches_time_range(&(h(10), h(20)), h(12)));
+    /// assert!(parser.matches_time_range(&(h(10), h(20)), h(10)));
+    /// assert!(parser.matches_time_range(&(h(12), h(6)), h(20)));
+    /// assert!(!parser.matches_time_range(&(h(12), h(6)), h(8)));
     /// ```
     pub fn matches_time_range(&self, range: &(u32, u32), value: u32) -> bool {
         if range.0 < range.1 {
-            value >= range.0 && value <= range.1
+            value >= range.0 && value < range.1
         } else {
-            value >= range.0 || value <= range.1
+            value >= range.0 || value < range.1
         }
     }
 
@@ -73,7 +83,7 @@ impl TimeRangeParser {
             if minutes > 59 || hours > 24 {
                 None
             } else {
-                Some(hours * 60 + minutes)
+                Some(h(hours) + minutes)
             }
         } else {
             None
@@ -104,9 +114,9 @@ impl TimeRangeParser {
     /// ```
     /// let parser = TimeRangeParser::new();
     ///
-    /// assert_eq!(parser.extract_time_range("Test (10h-20h)"), Some((10 * 60, 20 * 60)));
-    /// assert_eq!(parser.extract_time_range("Test (12:23h-20h)"), Some((12 * 60 + 23, 20 * 60)));
-    /// assert_eq!(parser.extract_time_range("Test (12:23h-20:59h)"), Some((12 * 60 + 23, 20 * 60 + 59)));
+    /// assert_eq!(parser.extract_time_range("Test (10h-20h)"), Some((h(10), h(20))));
+    /// assert_eq!(parser.extract_time_range("Test (12:23h-20h)"), Some((h(12) + 23, h(20))));
+    /// assert_eq!(parser.extract_time_range("Test (12:23h-20:59h)"), Some((h(12) + 23, h(20) + 59)));
     /// ```
     pub fn extract_time_range(&self, str: &str) -> Option<(u32, u32)> {
         let parsed = self.regex_range.captures(str)?;
@@ -127,9 +137,9 @@ mod tests {
         let parser = TimeRangeParser::new();
 
         let tests = [
-            ("Test (10h-20h)", Some((10 * 60, 20 * 60))),
-            ("Test (12:23h-20h)", Some((12 * 60 + 23, 20 * 60))),
-            ("Test (12:23h-20:59h)", Some((12 * 60 + 23, 20 * 60 + 59))),
+            ("Test (10h-20h)", Some((h(10), h(20)))),
+            ("Test (12:23h-20h)", Some((h(12) + 23, h(20)))),
+            ("Test (12:23h-20:59h)", Some((h(12) + 23, h(20) + 59))),
             ("Test (0:01h-0:00h)", Some((1, 0))),
             ("Test (0:00h-0:00h)", Some((0, 0))),
             ("Test (0:1h-0:0h)", None),
@@ -148,13 +158,19 @@ mod tests {
     fn test_matches_time_range() {
         let parser = TimeRangeParser::new();
 
-        assert!(parser.matches_time_range(&(10 * 60, 20 * 60), 12 * 60));
-        assert!(parser.matches_time_range(&(10 * 60, 20 * 60), 10 * 60));
-        assert!(parser.matches_time_range(&(12 * 60, 6 * 60), 20 * 60));
-        assert!(!parser.matches_time_range(&(12 * 60, 6 * 60), 8 * 60));
-        assert!(parser.matches_time_range(&(20 * 60, 12 * 60), 21 * 60));
-        assert!(parser.matches_time_range(&(20 * 60, 12 * 60), 10 * 60));
-        assert!(!parser.matches_time_range(&(20 * 60, 12 * 60), 13 * 60));
+        assert!(parser.matches_time_range(&(h(10), h(20)), h(12)));
+        assert!(parser.matches_time_range(&(h(10), h(20)), h(19)));
+        assert!(!parser.matches_time_range(&(h(10), h(20)), h(20)));
+        assert!(parser.matches_time_range(&(h(12), h(6)), h(20)));
+        assert!(!parser.matches_time_range(&(h(12), h(6)), h(8)));
+        assert!(!parser.matches_time_range(&(h(12), h(6)), h(8)));
+        assert!(parser.matches_time_range(&(h(12), h(6)), h(12)));
+        assert!(parser.matches_time_range(&(h(12), h(6)), h(18)));
+        assert!(!parser.matches_time_range(&(h(12), h(6)), h(6)));
+        assert!(parser.matches_time_range(&(h(12), h(6)), h(4)));
+        assert!(parser.matches_time_range(&(h(20), h(12)), h(21)));
+        assert!(parser.matches_time_range(&(h(20), h(12)), h(10)));
+        assert!(!parser.matches_time_range(&(h(20), h(12)), h(13)));
     }
 
     #[test]
@@ -162,15 +178,15 @@ mod tests {
         let mut parser = TimeRangeParser::new();
 
         parser.define_variables(HashMap::from([
-            ("sunrise".to_string(), 6 * 60),
-            ("sunset".to_string(), 20 * 60),
+            ("sunrise".to_string(), h(6)),
+            ("sunset".to_string(), h(20)),
         ]));
 
         let tests = [
-            ("Test (sunrise-sunset)", Some((6 * 60, 20 * 60))),
-            ("Test (sunrise-20h)", Some((6 * 60, 20 * 60))),
-            ("Test (18:23h-sunset)", Some((18 * 60 + 23, 20 * 60))),
-            ("Test (18:23h-15h)", Some((18 * 60 + 23, 15 * 60))),
+            ("Test (sunrise-sunset)", Some((h(6), h(20)))),
+            ("Test (sunrise-20h)", Some((h(6), h(20)))),
+            ("Test (18:23h-sunset)", Some((h(18) + 23, h(20)))),
+            ("Test (18:23h-15h)", Some((h(18) + 23, h(15)))),
         ];
 
         for test in tests.iter() {
