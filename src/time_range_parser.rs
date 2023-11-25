@@ -2,11 +2,16 @@ use regex::Regex;
 use std::collections::HashMap;
 
 pub struct TimeRangeParser {
+    regex_ranges: Regex,
     regex_range: Regex,
     regex_24h: Regex,
     regex_12h: Regex,
     variables: HashMap<String, u32>,
 }
+
+/// A time-range is a tuple of two timestamps, the first one is the start, the second one is the end.
+/// The timestamps are represented as minutes since midnight.
+pub type TimeRange = (u32, u32);
 
 /// Utility function to convert hours to minutes
 /// # Examples
@@ -21,7 +26,8 @@ fn h(hours: u32) -> u32 {
 impl TimeRangeParser {
     pub fn new() -> TimeRangeParser {
         TimeRangeParser {
-            regex_range: Regex::new(r"\((?<from>.*?)-(?<to>.*?)\)").unwrap(),
+            regex_ranges: Regex::new(r"\((?<values>.*?)\)").unwrap(),
+            regex_range: Regex::new(r"^(?<from>.*?)-(?<to>.*?)$").unwrap(),
             regex_24h: Regex::new(r"^(?<value>\d{1,2}(:\d{2})?)h$").unwrap(),
             regex_12h: Regex::new(r"^(?<value>\d{1,2}(:\d{2})?)(?<format>AM|PM)$").unwrap(),
             variables: HashMap::new(),
@@ -54,7 +60,7 @@ impl TimeRangeParser {
     /// assert!(parser.matches_time_range(&(h(12), h(6)), h(20)));
     /// assert!(!parser.matches_time_range(&(h(12), h(6)), h(8)));
     /// ```
-    pub fn matches_time_range(&self, range: &(u32, u32), value: u32) -> bool {
+    pub fn matches_time_range(&self, range: &TimeRange, value: u32) -> bool {
         if range.0 < range.1 {
             value >= range.0 && value < range.1
         } else {
@@ -128,17 +134,43 @@ impl TimeRangeParser {
     /// ```
     /// let parser = TimeRangeParser::new();
     ///
+    /// assert_eq!(parser.extract_time_range("Test"), None);
     /// assert_eq!(parser.extract_time_range("Test (10h-20h)"), Some((h(10), h(20))));
     /// assert_eq!(parser.extract_time_range("Test (12:23h-20h)"), Some((h(12) + 23, h(20))));
     /// assert_eq!(parser.extract_time_range("Test (12:23h-20:59h)"), Some((h(12) + 23, h(20) + 59)));
+    /// assert_eq!(parser.extract_time_range("Test (5AM-6PM)"), Some((h(5), h(18))));
+    /// assert_eq!(parser.extract_time_range("Test (12AM-12PM)"), Some((h(0), h(12))));
+    /// assert_eq!(parser.extract_time_range("Test (12:59AM-12:59PM)"), Some((h(0) + 59, h(12) + 59)));
     /// ```
-    pub fn extract_time_range(&self, str: &str) -> Option<(u32, u32)> {
+    pub fn extract_time_range(&self, str: &str) -> Option<TimeRange> {
         let parsed = self.regex_range.captures(str)?;
 
         Some((
             self.extract_time_segment(&parsed["from"])?,
             self.extract_time_segment(&parsed["to"])?,
         ))
+    }
+
+    /// Extracts multiple time-ranges from a string
+    /// # Examples
+    /// ```
+    /// let parser = TimeRangeParser::new();
+    ///
+    /// assert_eq!(parser.extract_time_ranges("Test"), vec![]);
+    /// assert_eq!(parser.extract_time_ranges("Test (10h-20h)"), vec![(h(10), h(20))]);
+    /// assert_eq!(parser.extract_time_ranges("Test (10h-20h, 12h-14h)"), vec![(h(10), h(20)), (h(12), h(14))]);
+    /// assert_eq!(parser.extract_time_ranges("Test (10h-20h, 12h-14h, 16h-18h)"), vec![(h(10), h(20)), (h(12), h(14)), (h(16), h(18))]);
+    /// ```
+    pub fn extract_time_ranges(&self, str: &str) -> Vec<TimeRange> {
+        let Some(parsed) = self.regex_ranges.captures(str) else {
+            return vec![];
+        };
+
+        parsed["values"]
+            .split(",")
+            .into_iter()
+            .filter_map(|value| self.extract_time_range(value.trim()))
+            .collect::<Vec<TimeRange>>()
     }
 }
 
@@ -149,78 +181,60 @@ mod tests {
     #[test]
     fn test_extract_time_range() {
         let parser = TimeRangeParser::new();
+        let etr = |v: &str| parser.extract_time_range(v);
 
-        assert_eq!(
-            parser.extract_time_range("Test (10h-20h)"),
-            Some((h(10), h(20)))
-        );
+        assert_eq!(etr("10h-20h"), Some((h(10), h(20))));
+        assert_eq!(etr("12:23h-20:59h"), Some((h(12) + 23, h(20) + 59)));
+        assert_eq!(etr("0:01h-0:00h"), Some((1, 0)));
+        assert_eq!(etr("0:00h-0:00h"), Some((0, 0)));
+        assert_eq!(etr("0:1h-0:0h"), None);
+        assert_eq!(etr("10h-20:60h"), None);
 
-        assert_eq!(
-            parser.extract_time_range("Test (12:23h-20:59h)"),
-            Some((h(12) + 23, h(20) + 59))
-        );
-
-        assert_eq!(
-            parser.extract_time_range("Test (0:01h-0:00h)"),
-            Some((1, 0))
-        );
-
-        assert_eq!(
-            parser.extract_time_range("Test (0:00h-0:00h)"),
-            Some((0, 0))
-        );
-
-        assert_eq!(parser.extract_time_range("Test (0:1h-0:0h)"), None);
-        assert_eq!(parser.extract_time_range("Test (10h-20:60h)"), None);
-        assert_eq!(parser.extract_time_range("Test (10h-25h)"), None);
-        assert_eq!(parser.extract_time_range("Test (10h-20h"), None);
-        assert_eq!(parser.extract_time_range("Test 10h-20h)"), None);
-
-        assert_eq!(
-            parser.extract_time_range("Test (6AM-6PM)"),
-            Some((h(6), h(18)))
-        );
-
-        assert_eq!(
-            parser.extract_time_range("Test (12AM-12PM)"),
-            Some((h(0), h(12)))
-        );
-
-        assert_eq!(
-            parser.extract_time_range("Test (12:59AM-12:59PM)"),
-            Some((h(0) + 59, h(12) + 59))
-        );
-
-        assert_eq!(
-            parser.extract_time_range("Test (2:30PM-1:55PM)"),
-            Some((h(14) + 30, h(13) + 55))
-        );
-
-        assert_eq!(parser.extract_time_range("Test (13PM-6PM)"), None);
-
-        assert_eq!(
-            parser.extract_time_range("Test (3AM-16:15h)"),
-            Some((h(3), h(16) + 15))
-        );
+        assert_eq!(etr("6AM-6PM"), Some((h(6), h(18))));
+        assert_eq!(etr("12AM-12PM"), Some((h(0), h(12))));
+        assert_eq!(etr("12:59AM-12:59PM"), Some((h(0) + 59, h(12) + 59)));
+        assert_eq!(etr("2:30PM-1:55PM"), Some((h(14) + 30, h(13) + 55)));
+        assert_eq!(etr("13PM-6PM"), None);
+        assert_eq!(etr("3AM-16:15h"), Some((h(3), h(16) + 15)));
     }
 
     #[test]
     fn test_matches_time_range() {
         let parser = TimeRangeParser::new();
+        let mtr = |r: &TimeRange, v: u32| parser.matches_time_range(&r, v);
 
-        assert!(parser.matches_time_range(&(h(10), h(20)), h(12)));
-        assert!(parser.matches_time_range(&(h(10), h(20)), h(19)));
-        assert!(!parser.matches_time_range(&(h(10), h(20)), h(20)));
-        assert!(parser.matches_time_range(&(h(12), h(6)), h(20)));
-        assert!(!parser.matches_time_range(&(h(12), h(6)), h(8)));
-        assert!(!parser.matches_time_range(&(h(12), h(6)), h(8)));
-        assert!(parser.matches_time_range(&(h(12), h(6)), h(12)));
-        assert!(parser.matches_time_range(&(h(12), h(6)), h(18)));
-        assert!(!parser.matches_time_range(&(h(12), h(6)), h(6)));
-        assert!(parser.matches_time_range(&(h(12), h(6)), h(4)));
-        assert!(parser.matches_time_range(&(h(20), h(12)), h(21)));
-        assert!(parser.matches_time_range(&(h(20), h(12)), h(10)));
-        assert!(!parser.matches_time_range(&(h(20), h(12)), h(13)));
+        assert!(mtr(&(h(10), h(20)), h(12)));
+        assert!(mtr(&(h(10), h(20)), h(19)));
+        assert!(!mtr(&(h(10), h(20)), h(20)));
+        assert!(mtr(&(h(12), h(6)), h(20)));
+        assert!(!mtr(&(h(12), h(6)), h(8)));
+        assert!(!mtr(&(h(12), h(6)), h(8)));
+        assert!(mtr(&(h(12), h(6)), h(12)));
+        assert!(mtr(&(h(12), h(6)), h(18)));
+        assert!(!mtr(&(h(12), h(6)), h(6)));
+        assert!(mtr(&(h(12), h(6)), h(4)));
+        assert!(mtr(&(h(20), h(12)), h(21)));
+        assert!(mtr(&(h(20), h(12)), h(10)));
+        assert!(!mtr(&(h(20), h(12)), h(13)));
+    }
+
+    #[test]
+    fn test_time_ranges() {
+        let parser = TimeRangeParser::new();
+        let etrs = |v: &str| parser.extract_time_ranges(v);
+
+        assert_eq!(etrs("Test"), vec![]);
+        assert_eq!(etrs("Test (10h-20h)"), vec![(h(10), h(20))]);
+
+        assert_eq!(
+            etrs("Test (10h-20h, 12h-14h)"),
+            vec![(h(10), h(20)), (h(12), h(14))]
+        );
+
+        assert_eq!(
+            etrs("Test (10h-20h, 12h-14h, 16h-18h)"),
+            vec![(h(10), h(20)), (h(12), h(14)), (h(16), h(18))]
+        );
     }
 
     #[test]
@@ -232,24 +246,11 @@ mod tests {
             ("sunset".to_string(), h(20)),
         ]));
 
-        assert_eq!(
-            parser.extract_time_range("Test (sunrise-sunset)"),
-            Some((h(6), h(20)))
-        );
+        let etr = |v: &str| parser.extract_time_range(v);
 
-        assert_eq!(
-            parser.extract_time_range("Test (sunrise-20h)"),
-            Some((h(6), h(20)))
-        );
-
-        assert_eq!(
-            parser.extract_time_range("Test (18:23h-sunset)"),
-            Some((h(18) + 23, h(20)))
-        );
-
-        assert_eq!(
-            parser.extract_time_range("Test (18:23h-15h)"),
-            Some((h(18) + 23, h(15)))
-        );
+        assert_eq!(etr("sunrise-sunset"), Some((h(6), h(20))));
+        assert_eq!(etr("sunrise-20h"), Some((h(6), h(20))));
+        assert_eq!(etr("18:23h-sunset"), Some((h(18) + 23, h(20))));
+        assert_eq!(etr("18:23h-15h"), Some((h(18) + 23, h(15))));
     }
 }

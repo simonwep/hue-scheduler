@@ -119,14 +119,14 @@ fn get_scheduled_scenes(parser: &TimeRangeParser, scenes: &Vec<Scene>) -> Vec<Sc
 
     // Group scenes by their lights
     for scene in scenes {
-        let Some(time_range) = parser.extract_time_range(&scene.name) else {
+        let time_ranges = parser.extract_time_ranges(&scene.name);
+
+        let Some(time_range) = time_ranges
+            .iter()
+            .find(|range| parser.matches_time_range(range, now))
+        else {
             continue;
         };
-
-        // Out of range
-        if !parser.matches_time_range(&time_range, now) {
-            continue;
-        }
 
         let Some(lights) = &scene.lights else {
             continue;
