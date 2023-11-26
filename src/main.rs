@@ -1,11 +1,12 @@
 use crate::time_range_parser::TimeRangeParser;
-use chrono::{Datelike, Local, Timelike};
+use chrono::{Local, Timelike};
 use huelib2::resource::group::StateModifier;
 use huelib2::resource::{Light, Scene};
 use huelib2::Bridge;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use sun_times::sun_times;
 
 mod config;
 mod time_range_parser;
@@ -19,11 +20,11 @@ pub struct ScheduledScene {
 
 fn main() {
     let mut reachable = HashMap::<String, bool>::new();
-    let configuration = config::load_config();
-    let bridge = Bridge::new(configuration.bridge_ip, configuration.bridge_username);
+    let conf = config::load_config();
+    let bridge = Bridge::new(conf.bridge_ip, conf.bridge_username);
 
     loop {
-        std::thread::sleep(configuration.interval);
+        std::thread::sleep(conf.interval);
 
         let Ok(all_lights) = bridge.get_all_lights() else {
             eprintln!("Failed to retrieve lights");
@@ -49,6 +50,8 @@ fn main() {
             for light in changed_lights.iter() {
                 reachable.insert(light.id.clone(), light.state.reachable);
             }
+
+            println!("Initialized reachable lights.");
             continue;
         }
 
@@ -91,9 +94,13 @@ fn main() {
             continue;
         };
 
-        let (sunrise, sunset) = get_sunrise_sunset();
-        let mut parser = TimeRangeParser::new();
+        let Some((sunrise, sunset)) = get_sunrise_sunset(conf.home_latitude, conf.home_longitude)
+        else {
+            eprintln!("Failed to retrieve sunrise/sunset");
+            continue;
+        };
 
+        let mut parser = TimeRangeParser::new();
         parser.define_variables(HashMap::from([
             ("sunrise".to_string(), sunrise),
             ("sunset".to_string(), sunset),
@@ -163,13 +170,11 @@ fn get_scheduled_scenes(parser: &TimeRangeParser, scenes: &Vec<Scene>) -> Vec<Sc
         .collect::<Vec<ScheduledScene>>()
 }
 
-fn get_sunrise_sunset() -> (u32, u32) {
-    let now = Local::now();
-    let (sunrise, sunset) =
-        sunrise::sunrise_sunset(43.6532, 79.3832, now.year(), now.month(), now.day());
-    (daytime_to_minutes(sunrise), daytime_to_minutes(sunset))
-}
+fn get_sunrise_sunset(latitude: f64, longitude: f64) -> Option<(u32, u32)> {
+    let (sunrise, sunset) = sun_times(Local::now().date_naive(), latitude, longitude, 0f64)?;
 
-fn daytime_to_minutes(millis: i64) -> u32 {
-    (((millis / 1_000 / 60 / 60) % 24) * 60) as u32 + ((millis / 1_000 / 60) % 60) as u32
+    Some((
+        sunrise.hour() * 60 + sunrise.minute(),
+        sunset.hour() * 60 + sunset.minute(),
+    ))
 }

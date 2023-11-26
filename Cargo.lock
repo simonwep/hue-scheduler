@@ -192,7 +192,7 @@ dependencies = [
  "dotenv",
  "huelib2",
  "regex",
- "sunrise",
+ "sun-times",
 ]
 
 [[package]]
@@ -466,10 +466,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
-name = "sunrise"
-version = "1.0.1"
+name = "sun-times"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3217c5830416956b1f2dc731f526150a82c144ebe83d2f0e78853c8356a22ada"
+checksum = "dc36d654e4388a4a79eab4852fd58db0687ac457bf1a097abfa4b8cc40a785c8"
 dependencies = [
  "chrono",
 ]
