@@ -40,14 +40,15 @@ fn main() {
 
         // Check for light changes
         let changed_lights = all_lights
-            .into_iter()
+            .iter()
+            .filter(|light| !is_attached_light(light))
             .filter(|light| {
                 light_states
                     .get(&light.id)
                     .map(|last_reachable| last_reachable.reachable != light.state.reachable)
                     .unwrap_or(true)
             })
-            .collect::<Vec<Light>>();
+            .collect::<Vec<&Light>>();
 
         if changed_lights.is_empty() {
             continue;
@@ -87,6 +88,14 @@ fn main() {
             );
         }
 
+        // Collect ids of all lights that are ignored / always on / not controlled by a physical switch
+        // They have the prefix "(att)" for "attached" in their name
+        let ignored_light_ids = all_lights
+            .iter()
+            .filter(|light| is_attached_light(light))
+            .map(|light| &light.id)
+            .collect::<Vec<&String>>();
+
         // Check for scene changes, this is done by:
         // 1. Extract all reachable lights that have been reachable for less than the reachability window
         // 2. Extract all scenes that contain all the lights from 1.
@@ -102,7 +111,8 @@ fn main() {
             .map(|(light_id, _)| light_id)
             .collect::<Vec<&String>>();
 
-        // Extract scenes from which all lights are reachable
+        // Extract scenes from which all lights are reachable or
+        // are attached to a scene that can be triggered
         let Ok(changed_scenes) = bridge.get_all_scenes().map(|scenes| {
             scenes
                 .into_iter()
@@ -111,9 +121,10 @@ fn main() {
                         .lights
                         .clone()
                         .map(|light_ids| {
-                            light_ids
-                                .iter()
-                                .all(|light_id| light_trigger_ids.contains(&light_id))
+                            light_ids.iter().all(|light_id| {
+                                ignored_light_ids.contains(&light_id)
+                                    || light_trigger_ids.contains(&light_id)
+                            })
                         })
                         .unwrap_or(false)
                 })
@@ -152,12 +163,50 @@ fn main() {
 
         // Process scenes
         for scheduled_scene in get_scheduled_scenes(&parser, &changed_scenes).iter() {
+            // Turn on scenes
             if let Err(err) = bridge.set_group_state(
                 &scheduled_scene.scene_id,
                 &StateModifier::new().with_scene(scheduled_scene.scene_id.clone()),
             ) {
                 eprintln!("Failed to set scene: {}", err);
                 continue;
+            }
+        }
+
+        // Turn of lights that are attached to scenes but reachable all the time
+        let Ok(all_groups) = bridge.get_all_groups() else {
+            eprintln!("Failed to retrieve groups");
+            continue;
+        };
+
+        for group in all_groups.iter() {
+            // Check if all lights are either attached to other lights from a scene
+            // or changed their status to not reachable
+            let all_non_attached_turned_off = group.lights.iter().all(|light_id| {
+                ignored_light_ids.contains(&light_id)
+                    || (changed_lights
+                        .iter()
+                        .find(|light| light.id == *light_id)
+                        .is_some()
+                        && light_states
+                            .get(light_id)
+                            .map(|state| !state.reachable)
+                            .unwrap_or(false))
+            });
+
+            if all_non_attached_turned_off {
+                println!(
+                    "All lights are unreachable, turning off group: {}",
+                    group.name
+                );
+
+                // Turn attached lights off
+                if let Err(err) =
+                    bridge.set_group_state(&group.id, &StateModifier::new().with_on(false))
+                {
+                    eprintln!("Failed to turn off attached lights: {}", err);
+                    continue;
+                }
             }
         }
     }
@@ -221,4 +270,8 @@ fn get_sunrise_sunset(latitude: f64, longitude: f64) -> Option<(u32, u32)> {
         sunrise.hour() * 60 + sunrise.minute(),
         sunset.hour() * 60 + sunset.minute(),
     ))
+}
+
+fn is_attached_light(light: &Light) -> bool {
+    light.name.ends_with("(att)")
 }

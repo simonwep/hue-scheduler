@@ -53,6 +53,15 @@ Example scene names with time-frames:
 - **Work (8:30h-17h)** _- The "Work" scene should be turned on from 8:30 AM until 5:00 PM._
 - **Sleep (11PM-8AM)** _- The "Sleep" scene should be turned on from 11:00 PM until 8:00 AM._
 
+#### Working with "always-on" lights
+
+Some lights may always be reachable and should be turned on when a scene is activated due to another light that is controlled by a physical switch.
+To mark a light to be turned on/off as well whenever the corresponding scene is activated/deactivated, prepend a `(att)` for "attached" to the lights name.
+
+Now, if you flip the physical switch and the light is turned off the lights that are always "on" (connected to a power source) will be turned off as well.
+Since it takes some time for the hue bridge to recognize no longer reachable lights this may take up to a minute.
+Still better than doing it manually ;)
+
 ### Screenshots
 
 This is how it will usually look like in the app.
