@@ -1,5 +1,6 @@
+use crate::config::Config;
 use crate::time_range_parser::TimeRangeParser;
-use chrono::{Local, Timelike};
+use chrono::{DateTime, Local, Timelike, Utc};
 use huelib2::resource::group::StateModifier;
 use huelib2::resource::{Light, Scene};
 use huelib2::Bridge;
@@ -28,7 +29,7 @@ struct StateChange {
 fn main() {
     let mut light_states = HashMap::<String, StateChange>::new();
     let conf = config::load_config();
-    let bridge = Bridge::new(conf.bridge_ip, conf.bridge_username);
+    let bridge = Bridge::new(conf.bridge_ip.clone(), &conf.bridge_username);
 
     loop {
         std::thread::sleep(conf.ping_interval);
@@ -162,7 +163,7 @@ fn main() {
         ]));
 
         // Process scenes
-        for scheduled_scene in get_scheduled_scenes(&parser, &changed_scenes).iter() {
+        for scheduled_scene in get_scheduled_scenes(&conf, &parser, &changed_scenes).iter() {
             // Turn on scenes
             if let Err(err) = bridge.set_group_state(
                 &scheduled_scene.scene_id,
@@ -213,9 +214,14 @@ fn main() {
 }
 
 /// Returns all scheduled scenes that are active right now
-fn get_scheduled_scenes(parser: &TimeRangeParser, scenes: &Vec<Scene>) -> Vec<ScheduledScene> {
+fn get_scheduled_scenes(
+    conf: &Config,
+    parser: &TimeRangeParser,
+    scenes: &Vec<Scene>,
+) -> Vec<ScheduledScene> {
     let mut scheduled_scenes = HashMap::<u64, ScheduledScene>::new();
-    let now = Local::now().hour() * 60 + Local::now().minute();
+    let date_time = DateTime::<Utc>::from(Local::now()).with_timezone(&conf.home_timezone);
+    let now = date_time.hour() * 60 + date_time.minute();
 
     // Group scenes by their lights
     for scene in scenes {

@@ -1,3 +1,4 @@
+use chrono_tz::Tz;
 use std::env;
 use std::net::IpAddr;
 use std::str::FromStr;
@@ -9,6 +10,7 @@ pub struct Config {
     pub bridge_username: String,
     pub ping_interval: Duration,
     pub reachability_window: Duration,
+    pub home_timezone: Tz,
     pub home_latitude: f64,
     pub home_longitude: f64,
 }
@@ -46,11 +48,17 @@ pub fn load_config() -> Config {
         .parse::<f64>()
         .expect("failed to parse HOME_LONGITUDE");
 
+    let home_timezone = env::var("HOME_TIMEZONE")
+        .expect("HOME_TIMEZONE missing")
+        .parse::<Tz>()
+        .expect("failed to parse HOME_TIMEZONE");
+
     Config {
         bridge_ip,
         bridge_username,
         ping_interval,
         reachability_window,
+        home_timezone,
         home_latitude,
         home_longitude,
     }
