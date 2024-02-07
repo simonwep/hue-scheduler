@@ -34,6 +34,37 @@ Currently, the only way to install this app is to clone this repository and buil
 > After installation and setup (e.g. the app is running) nothing needs to be done anymore.  
 > Anything else is configured in your Philips Hue app!
 
+#### Installing as system service
+
+You will probably want to run this as a service in the background, for this you could use `.service` file like this (assuming you downloaded and compiled the source under `/home/ubuntu/hue-scheduler`):
+
+```
+[Unit]
+Description=Philips hue automation
+After=network.target
+
+[Service]
+ExecStart=/home/ubuntu/hue-scheduler/target/release/hue-scheduler
+WorkingDirectory=/home/ubuntu/hue-scheduler
+User=ubuntu
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+You can then start the service via:
+
+```sh
+sudo systemctl enable hue-scheduler
+```
+
+And to make it automatically start on reboot:
+
+```sh
+sudo systemctl enable hue-scheduler
+```
+
 ### Usage
 
 When which scene should be turned on is solely specified by the name of your scenes.
