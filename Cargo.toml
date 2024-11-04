@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4.31"
-chrono-tz = "0.8.5"
+chrono = "0.4.38"
+chrono-tz = "0.10.0"
 dotenv = "0.15.0"
 huelib2 = "0.13.3"
-regex = "1.10.2"
+regex = "1.11.1"
 sun-times = "0.2.0"
