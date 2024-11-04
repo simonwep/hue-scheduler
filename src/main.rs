@@ -31,9 +31,12 @@ fn main() {
     loop {
         std::thread::sleep(conf.ping_interval);
 
-        let Ok(all_lights) = bridge.get_all_lights() else {
-            eprintln!("Failed to retrieve lights");
-            continue;
+        let all_lights = match bridge.get_all_lights() {
+            Ok(result) => result,
+            Err(error) => {
+                eprintln!("Failed to retrieve lights: {:?}", error);
+                continue;
+            }
         };
 
         // Check for light changes
