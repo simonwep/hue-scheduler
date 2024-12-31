@@ -1,5 +1,6 @@
 use chrono_tz::Tz;
 use std::env;
+use std::fs::File;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::time::Duration;
@@ -13,6 +14,7 @@ pub struct Config {
     pub home_timezone: Tz,
     pub home_latitude: f64,
     pub home_longitude: f64,
+    pub debug_file: Option<File>,
 }
 
 pub fn load_config() -> Config {
@@ -53,6 +55,16 @@ pub fn load_config() -> Config {
         .parse::<Tz>()
         .expect("failed to parse HOME_TIMEZONE");
 
+    let debug_file = env::var("DEBUG_FILE")
+        .map(|path| {
+            if path.is_empty() {
+                None
+            } else {
+                Some(File::create(path).expect("failed to create debug file"))
+            }
+        })
+        .unwrap_or(None);
+
     Config {
         bridge_ip,
         bridge_username,
@@ -61,5 +73,6 @@ pub fn load_config() -> Config {
         home_timezone,
         home_latitude,
         home_longitude,
+        debug_file,
     }
 }

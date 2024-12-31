@@ -4,6 +4,8 @@ use huelib2::resource::group::StateModifier;
 use huelib2::resource::{Light, Scene};
 use huelib2::Bridge;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{Seek, Write};
 use std::time::Instant;
 
 mod config;
@@ -18,7 +20,7 @@ struct StateChange {
 
 fn main() {
     let mut light_states = HashMap::<String, StateChange>::new();
-    let conf = config::load_config();
+    let mut conf = config::load_config();
     let bridge = Bridge::new(conf.bridge_ip.clone(), &conf.bridge_username);
 
     println!(
@@ -37,6 +39,12 @@ fn main() {
                 eprintln!("Failed to retrieve lights: {:?}", error);
                 continue;
             }
+        };
+
+        // Write debug file if needed
+        match conf.debug_file {
+            Some(ref mut file) => write_debug_file(&all_lights, file),
+            None => (),
         };
 
         // Check for light changes
@@ -200,7 +208,7 @@ fn main() {
 
             if some_lights_on && all_non_attached_turned_off {
                 println!(
-                    "All non-atteched lights are unreachable, turning off group: {}",
+                    "All non-attached lights are unreachable, turning off group: {}",
                     group.name
                 );
 
@@ -213,5 +221,31 @@ fn main() {
                 }
             }
         }
+    }
+}
+
+fn write_debug_file(lights: &Vec<Light>, file: &mut File) {
+    let mut light_stats = lights
+        .iter()
+        .map(|light| {
+            format!(
+                "light_{} = {{ name = \"{}\", reachable = {}, on = {} }}",
+                format!("{:0>3}", light.id),
+                light.name,
+                light.state.reachable,
+                light.state.on.unwrap_or(false)
+            )
+        })
+        .collect::<Vec<String>>();
+
+    light_stats.sort_by(|a, b| a.cmp(b));
+
+    // Seek to the beginning of the file
+    if let Err(err) = file.seek(std::io::SeekFrom::Start(0)) {
+        eprintln!("Failed to seek to beginning of debug file: {}", err);
+    }
+
+    if let Err(err) = file.write_all(light_stats.join("\n").as_bytes()) {
+        eprintln!("Failed to write to debug file: {}", err);
     }
 }
